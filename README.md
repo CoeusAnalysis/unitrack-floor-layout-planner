@@ -7,6 +7,8 @@ Every piece is its real size, and track joins only where the real pieces would.
 It is one HTML file: open `index.html` in a modern browser. Nothing is
 installed and nothing is sent anywhere; layouts are saved to your computer.
 
+Try it here now: https://pipanic.github.io/unitrack-floor-layout-planner/
+
 ## What it does
 
 - Real KATO Unitrack geometry for straights, curves, turnouts, crossings,
