@@ -1,4 +1,4 @@
-# Floor Layout Planner
+# Unitrack (N-scale) Floor Layout Planner
 
 A free planner for N-scale Unitrack layouts, aimed at the temporary floor
 layouts that are set up and taken down in a day (Japan's "tatami layouts").
@@ -33,6 +33,10 @@ against KATO's own catalogue before you buy.
 
 This repository holds the released build: `index.html` is the whole planner,
 in one file.
+
+Most code was vibe-coded with Claude Sonnet, with Claude Opus conducting multiple
+code reviews when appropriate, to tidy, find efficiencies, and make more elegant
+the project.
 
 ## Licence
 
