@@ -4,6 +4,8 @@ A free planner for N-scale Unitrack layouts, aimed at the temporary floor
 layouts that are set up and taken down in a day (Japan's "tatami layouts").
 Every piece is its real size, and track joins only where the real pieces would.
 
+![The planner, with each piece labelled by its part code: turnouts, double track and a crossover](screenshot.png)
+
 It is one HTML file: open `index.html` in a modern browser. Nothing is
 installed and nothing is sent anywhere; layouts are saved to your computer.
 
