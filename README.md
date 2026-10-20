@@ -29,7 +29,7 @@ Press the red **?** in the header for the full guide.
 
 This is an independent, unofficial project. It is not made by, affiliated with
 or endorsed by KATO. KATO and Unitrack are trademarks of their owners and are
-used only to say which track the planner is for. Part numbers and dimensions
+used only to say which track system the planner is for. Part numbers and dimensions
 are published facts, and no KATO artwork or documents are included. Check them
 against KATO's own catalogue before you buy.
 
@@ -40,7 +40,7 @@ in one file.
 
 Most code was vibe-coded with Claude Sonnet, with Claude Opus conducting multiple
 code reviews when appropriate, to tidy, find efficiencies, and make more elegant
-the project.
+the code.
 
 ## Licence
 
