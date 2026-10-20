@@ -19,8 +19,8 @@ Try it here now: https://pipanic.github.io/unitrack-floor-layout-planner/
   elevation, gradients, and a warning where track crosses too low.
 - Power View (joints from the nearest feeder), UniJoiners, and a Fill Gap
   tool that finds the pieces to join two open ends.
-- A parts list, with the fewest KATO packs that cover it, and an Inventory
-  + Limited Mode that limits you to the track you own.
+- A parts list, with the fewest KATO packs that cover it, and an Inventory 
+  & Limited Mode that limits you to the track you own.
 - Tabletop outlines, text labels, undo, PNG export, and save and load.
 
 Press the red **?** in the header for the full guide.
