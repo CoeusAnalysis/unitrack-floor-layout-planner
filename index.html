@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Floor Layout Planner</title>
 <style>
   :root{
@@ -79,7 +80,12 @@
     display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:var(--surface);border:1px solid var(--panel-border);
     color:var(--text);border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:12.5px;cursor:grab;
     transition:background .12s,border-color .12s;user-select:none;
+    touch-action:none; /* a finger's press is a drag, not a scroll or zoom (Pointer Events) */
   }
+  /* In the scrolling palette a vertical swipe still scrolls it; any other
+     move is a drag. A scroll the browser takes cancels the press
+     (pointercancel), which places nothing. */
+  #palette .pbtn{touch-action:pan-y;}
   .pbtn:hover, .pbtn.hover{background:var(--surface-hover);border-color:var(--accent-dim);}
   .pbtn:active{cursor:grabbing;}
   .code{color:var(--text-dim);font-size:10.5px;display:block;margin-top:2px;}
@@ -106,6 +112,8 @@
   #canvasWrap{position:relative;overflow:hidden;background:
      radial-gradient(circle,var(--canvas-grid) 1px,transparent 1px) 0 0/22px 22px, var(--bg);}
   svg{width:100%;height:100%;display:block;cursor:default;}
+  /* Every touch on the canvas is the planner's (drags, two-finger pinch and pan), never the browser's scroll or zoom. */
+  #stage{touch-action:none;}
   /* A drag-pan mustn't select canvas text (part labels, dimensions). */
   #stage text{user-select:none;-webkit-user-select:none;}
   /* the tabletop size inputs: no spinner, so four or five digits fit */
@@ -139,7 +147,11 @@
   .hdrbtn:disabled:hover{background:var(--surface);border-color:var(--panel-border);}
   /* a <select> shares the header button styling but keeps its native dropdown arrow, so it still reads as a dropdown */
   select.hdrbtn{font-family:inherit;}
-  select.hdrbtn:focus{outline:none;border-color:var(--accent-dim);}
+  select.hdrbtn:focus-visible{border-color:var(--accent-dim);}
+  /* Keyboard focus is always visible; :focus-visible keeps the ring off a mouse click. */
+  .hdrbtn:focus-visible, .pbtn:focus-visible, button.action:focus-visible, .zoomctl button:focus-visible, .modal-close:focus-visible,
+  input:focus-visible, select:focus-visible, textarea:focus-visible, .drawer-toggle:focus-visible, .gest-card:focus-visible,
+  #paletteSearch:focus-visible, #gestSearch:focus-visible, #helpSearch:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
   /* Header buttons: an icon and a word. Narrow, only the icon shows; the word
      stays for screen readers, and each button's tooltip names it. */
   .hdrbtn .hdr-label{margin-left:.35em;}
@@ -232,8 +244,8 @@
   #invTools input{background:var(--surface);border:1px solid var(--panel-border);color:var(--text);border-radius:6px;padding:6px 9px;font-size:13px;}
   #invSearch{flex:1;}
   #invPackNo{width:15em;}
-  /* the colour goes on the focus ring too, or the browser's ring hides it while typing */
-  #invTools #invPackNo:focus{outline:none;border-color:var(--accent-dim);}
+  /* the ring stands clear of the field, so the valid/invalid colour below still shows while typing */
+  #invTools #invPackNo:focus-visible{border-color:var(--accent-dim);outline-offset:2px;}
   #invTools #invPackNo.valid{border-color:var(--start-border);box-shadow:0 0 0 1px var(--start-border);}
   #invTools #invPackNo.invalid{border-color:var(--danger-border);box-shadow:0 0 0 1px var(--danger-border);}
   #invPackMsg{font-size:12px;color:var(--text-dim);min-height:1.2em;}
@@ -257,6 +269,8 @@
   #emptyStart p{margin:0;max-width:30em;font-size:14px;line-height:1.5;color:var(--text-dim);}
   #emptyStart .starts{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;max-width:520px;pointer-events:auto;}
   #emptyStart .pbtn{width:auto;min-width:56px;justify-content:center;margin:0;padding:8px 12px;font-size:14px;font-weight:600;}
+  /* "New here?": a link-styled button under the sets */
+  #emptyGestBtn{pointer-events:auto;background:none;border:none;padding:4px 6px;border-radius:4px;font:inherit;font-size:13px;color:var(--accent);cursor:pointer;text-decoration:underline;}
   .inv-step{display:flex;align-items:center;gap:4px;flex-shrink:0;}
   .inv-step button{width:26px;height:26px;border-radius:6px;background:var(--accent-dim);border:1px solid var(--accent);color:var(--text);cursor:pointer;font-size:15px;line-height:1;}
   .inv-step button:hover{background:var(--accent);}
@@ -291,6 +305,34 @@
   /* The pack view's catalogue number stays on one line beside a long set row. */
   #packsTable td:nth-child(2){white-space:nowrap;}
   table.parts-table tfoot td{border-bottom:none;font-weight:600;}
+  /* NARROW SCREENS (below 1100px): the canvas takes the whole width; the
+     palette and the side panel become drawers over it, each opened by a
+     button at the canvas's foot (setDrawer). Closed drawers stay laid out
+     (visibility, not display), so nothing measuring them breaks. The header
+     scrolls sideways rather than widening the page. */
+  .drawer-toggle{display:none;}
+  @media (max-width:1099px){
+    #app{grid-template-columns:minmax(0,1fr);height:100dvh;}
+    /* positioned, so the visually hidden labels (absolute) scroll with it instead of widening the page */
+    header{grid-column:1;min-width:0;overflow-x:auto;overflow-y:hidden;position:relative;}
+    header > *{flex-shrink:0;}
+    header h1{white-space:nowrap;}
+    #canvasWrap{grid-column:1;grid-row:2;}
+    #paletteCol, #info{position:fixed;top:52px;bottom:0;z-index:900;width:min(300px,86vw);
+      visibility:hidden;transition:transform .18s ease, visibility .18s;box-shadow:0 0 24px rgba(0,0,0,.45);}
+    #paletteCol{left:0;transform:translateX(-100%);}
+    #info{right:0;transform:translateX(100%);}
+    #app.palette-open #paletteCol, #app.info-open #info{transform:none;visibility:visible;}
+    .drawer-toggle{display:block;position:fixed;bottom:12px;z-index:950;padding:8px 14px;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.35);}
+    .drawer-toggle[aria-expanded="true"]{background:var(--accent-dim);border-color:var(--accent);}
+    #paletteToggle{left:12px;}
+    #infoToggle{right:12px;}
+    /* the view buttons wrap above the drawer buttons instead of running off the canvas */
+    .zoomctl{left:8px;right:8px;bottom:58px;flex-wrap:wrap;justify-content:flex-end;}
+  }
+  @media (max-width:1099px) and (prefers-reduced-motion:reduce){
+    #paletteCol, #info{transition:none;}
+  }
 </style>
 </head>
 <body>
@@ -302,7 +344,7 @@
       <button id="newBtn" class="hdrbtn" data-str-title="header.new.title"><span class="hdr-icon" aria-hidden="true">&#127381;</span><span class="hdr-label" data-str="header.new">New</span></button>
       <button id="saveBtn" class="hdrbtn" data-str-title="header.save.title"><span class="hdr-icon" aria-hidden="true">&#128190;</span><span class="hdr-label" data-str="header.save">Save</span></button>
       <button id="loadBtn" class="hdrbtn" data-str-title="header.load.title"><span class="hdr-icon" aria-hidden="true">&#128194;</span><span class="hdr-label" data-str="header.load">Load</span></button>
-      <select id="modeSelect" data-hint="b7" class="hdrbtn" data-str-title="header.mode.title"></select>
+      <select id="modeSelect" data-hint="b7" class="hdrbtn" data-str-title="header.mode.title" data-str-aria-label="header.mode.title"></select>
       <button id="inventoryBtn" data-hint="b8" class="hdrbtn" data-str-title="header.inventory.title"><span class="hdr-icon" aria-hidden="true">&#128230;</span><span class="hdr-label" data-str="header.inventory">Inventory</span></button>
       <button id="helpBtn" class="hdrbtn" data-str-title="header.help.title" aria-haspopup="dialog" aria-controls="helpOverlay"><span class="hdr-icon" aria-hidden="true">&#10067;</span><span class="hdr-label" data-str="header.help">Help</span></button>
       <button id="gestBtn" class="hdrbtn" data-hint="p9" data-str-title="header.gestures.title" aria-haspopup="dialog" aria-controls="gestOverlay"><span class="hdr-icon" aria-hidden="true">&#9995;</span><span class="hdr-label" data-str="header.gestures">Gestures</span></button>
@@ -310,8 +352,8 @@
       <input type="file" id="loadInput" accept=".json,application/json" style="display:none;">
     </div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
-      <span id="autosaveMsg" style="font-size:11px;color:var(--text-dim);opacity:.65;"></span>
-      <span id="saveLoadMsg" style="font-size:12px;color:var(--text-dim);"></span>
+      <span id="autosaveMsg" role="status" aria-live="polite" style="font-size:11px;color:var(--text-dim);"></span>
+      <span id="saveLoadMsg" role="status" aria-live="polite" style="font-size:12px;color:var(--text-dim);"></span>
       <button id="undoBtn" data-hint="b6" class="hdrbtn" data-str-title="header.undo.title" disabled><span class="hdr-icon" aria-hidden="true">&#8630;</span><span class="hdr-label" data-str="header.undo">Undo</span></button>
       <button id="redoBtn" data-hint="b6" class="hdrbtn" data-str-title="header.redo.title" disabled><span class="hdr-icon" aria-hidden="true">&#8631;</span><span class="hdr-label" data-str="header.redo">Redo</span></button>
     </div>
@@ -469,7 +511,7 @@
     </div>
   </div>
 
-  <div id="paletteCol">
+  <div id="paletteCol" role="complementary" aria-label="Parts palette">
     <div id="paletteSearchWrap">
       <div class="searchbox">
         <input type="text" id="paletteSearch" data-str-placeholder="palette.search.placeholder" placeholder="Search pieces or codes&hellip;" autocomplete="off">
@@ -479,11 +521,12 @@
     <div id="palette"></div>
   </div>
 
-  <div id="canvasWrap">
+  <div id="canvasWrap" role="main">
     <svg id="stage" viewBox="0 0 1000 700"></svg>
     <div id="emptyStart">
       <p data-str="empty.start">To start, click on or drag a piece from the palette to the left, or select a Unitrack Set or layout below.</p>
       <div class="starts" id="emptyStartSets"></div>
+      <button id="emptyGestBtn" type="button" data-str="empty.gestures" aria-haspopup="dialog" aria-controls="gestOverlay">New here? See the Gestures guide</button>
     </div>
     <div class="zoomctl">
       <button id="tiesToggle" data-hint="b9" data-str-title="canvas.ties.title" title="Toggle detail"></button>
@@ -501,8 +544,8 @@
     </div>
   </div>
 
-  <div id="info">
-    <div id="hint" data-str="hint.default">Drag a piece from the left panel onto the layout to place it freely, click one to drop it in the middle of the view, or click a green port then click a piece to attach it there.</div>
+  <div id="info" role="complementary" aria-label="Layout and selection">
+    <div id="hint" role="status" aria-live="polite" data-str="hint.default">Drag a piece from the left panel onto the layout to place it freely, click one to drop it in the middle of the view, or click a green port then click a piece to attach it there.</div>
     <h2 data-str="panel.layout.heading">Layout</h2>
     <div class="stat"><span data-str="stat.pieces.label">Pieces</span><span id="statPieces">0</span></div>
     <div class="stat"><span data-str="stat.length.label">Track length</span><span id="statLength">0 mm</span></div>
@@ -522,17 +565,21 @@
     <button class="action neutral" id="pngBtn" data-hint="b13" style="margin-top:auto;" disabled>Export PNG</button>
     <button class="action neutral" id="partsBtn" data-hint="b5">Export Parts List</button>
   </div>
+  <!-- Narrow screens only: open the palette and the side panel as drawers (setDrawer) -->
+  <button id="paletteToggle" class="hdrbtn drawer-toggle" type="button" aria-controls="paletteCol" aria-expanded="false" data-str="drawer.palette">Parts</button>
+  <button id="infoToggle" class="hdrbtn drawer-toggle" type="button" aria-controls="info" aria-expanded="false" data-str="drawer.info">Panel</button>
 </div>
 
 <script>
-// Populates every element carrying a data-str/data-str-title/data-str-placeholder
-// attribute from STRINGS, plus the Help modal body (its own key, not an
+// Populates every element carrying a data-str/data-str-title/data-str-placeholder/
+// data-str-aria-label attribute from STRINGS, plus the Help modal body (its own key, not an
 // attribute, since it's set once as a block — see the STRINGS comment).
 // Called once at startup and again if the language ever changes.
 function applyStaticStrings(){
   document.querySelectorAll('[data-str]').forEach(el=>{ el.innerHTML = tr(el.dataset.str); });
   document.querySelectorAll('[data-str-title]').forEach(el=>{ el.title = tr(el.dataset.strTitle); });
   document.querySelectorAll('[data-str-placeholder]').forEach(el=>{ el.placeholder = tr(el.dataset.strPlaceholder); });
+  document.querySelectorAll('[data-str-aria-label]').forEach(el=>{ el.setAttribute('aria-label', tr(el.dataset.strAriaLabel)); });
   document.getElementById('helpBody').innerHTML = tr('help.body.html');
 }
 </script>
@@ -736,6 +783,7 @@ const STRINGS = {
         <div class="help-row"><span class="keys">Drag empty canvas, or hold <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></span><span class="desc">Pan. An empty layout doesn't pan.</span></div>
         <div class="help-row"><span class="keys">Scroll over empty canvas, − / +, or the <kbd>+</kbd> / <kbd>−</kbd> keys</span><span class="desc">Zoom. The number between the buttons is the current zoom.</span></div>
         <div class="help-row"><span class="keys">↺, or <kbd>Space</kbd></span><span class="desc">Fit the whole layout in view.</span></div>
+        <div class="help-row"><span class="keys">Touch screen: two fingers</span><span class="desc">Pinch to zoom, and move both fingers to pan. One finger drags as the mouse does. On a narrow screen the palette and the side panel open from the Parts and Panel buttons at the foot of the canvas.</span></div>
         <div class="help-row"><span class="keys">↕ ↓ ↑, or <kbd>V</kbd></span><span class="desc">Show every level at full strength (↕), or fade the other level to work on ground (↓) or elevated (↑) track. <kbd>V</kbd> moves to the next of the three each time.</span></div>
         <div class="help-row"><span class="keys">Detail button, or <kbd>T</kbd></span><span class="desc">Show or hide track detail: the ties (sleepers), and on slab track the slab and its fastenings, leaving the bare roadbed and rails. The icon shows what's on screen now. They also hide themselves below 1.00× zoom (⚙️ Settings can make that sooner, later or never); turn them on there to keep them until you next zoom back in.</span></div>
         <div class="help-row"><span class="keys">Labels button, or <kbd>L</kbd></span><span class="desc">Part labels, four settings in turn: Limited (the default) labels only the pieces easily mistaken for a similar one, such as the S64 and the S60s; Printed labels every piece the same way, printed on the track so they grow and shrink with it; All labels every piece with its part code, horizontal, readable when zoomed out and growing with the track above 1.00× zoom, and moved along its piece where labels would crowd, or left off if there's no room anywhere along it; Off shows none. The icon shows the current setting.</span></div>
@@ -775,6 +823,7 @@ const STRINGS = {
         <div class="help-row"><span class="keys">Right-drag</span><span class="desc">Draw a marquee selection box: every piece with a track end inside it is selected.</span></div>
         <div class="help-row"><span class="keys"><kbd>Shift</kbd>+Right-drag</span><span class="desc">Box-select, adding to the selection.</span></div>
         <div class="help-row"><span class="keys"><kbd>Ctrl</kbd>+<kbd>A</kbd></span><span class="desc">Select every piece.</span></div>
+        <div class="help-row"><span class="keys"><kbd>[</kbd> / <kbd>]</kbd></span><span class="desc">Select the previous / next piece, one at a time, in the order they were placed. The view follows if it's off screen.</span></div>
         <div class="help-row"><span class="keys"><kbd>Esc</kbd>, or click empty canvas</span><span class="desc">Deselect.</span></div>
         <p>The side panel shows what's selected: the piece and its part code, or a count of each part.</p>
       </section>
@@ -786,9 +835,10 @@ const STRINGS = {
         <div class="help-row"><span class="keys"><kbd>Q</kbd> / <kbd>E</kbd>, with a selection</span><span class="desc">Turn it 15° anticlockwise / clockwise about its centre. Joins to pieces outside the selection break, as when dragging; ends that land exactly on another end join.</span></div>
         <div class="help-row"><span class="keys"><kbd>Shift</kbd>+Scroll, whilst dragging</span><span class="desc">Morph the piece into a different size. An expansion track changes length, and its end moving away comes unjoined.</span></div>
         <div class="help-row"><span class="keys"><kbd>F</kbd></span><span class="desc">Flip the one selected piece in place. Joins that still line up are kept. Also works whilst dragging a piece.</span></div>
+        <div class="help-row"><span class="keys"><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd>, with a selection</span><span class="desc">Nudge it 1&nbsp;mm; with <kbd>Shift</kbd>, 10&nbsp;mm. Joins to pieces outside the selection break; each press is one undo step.</span></div>
         <div class="help-row"><span class="keys"><kbd>Delete</kbd> or <kbd>Backspace</kbd>, or the Delete button</span><span class="desc">Delete the selection.</span></div>
         <div class="help-row"><span class="keys"><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>X</kbd> / <kbd>V</kbd></span><span class="desc">Copy, cut, paste. Each paste is offset so repeats don't stack. A pasted group keeps its own joins but isn't joined to anything else.</span></div>
-        <div class="help-row"><span class="keys"><kbd>Ctrl</kbd>+<kbd>Z</kbd>; <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Ctrl</kbd>+<kbd>Y</kbd></span><span class="desc">Undo, redo: up to 50 steps. Specific buttons for this function are also in the header, top right of the screen. Undo works at any time, even mid-drag, where it cancels the drag.</span></div>
+        <div class="help-row"><span class="keys"><kbd>Ctrl</kbd>+<kbd>Z</kbd>; <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Ctrl</kbd>+<kbd>Y</kbd></span><span class="desc">Undo, redo: up to 50 steps (fewer on a very large layout). Specific buttons for this function are also in the header, top right of the screen. Undo works at any time, even mid-drag, where it cancels the drag.</span></div>
       </section>
 
       <section id="help-joins">
@@ -914,6 +964,8 @@ const STRINGS = {
         <div class="help-row"><span class="keys"><kbd>T</kbd></span><span class="desc">Toggle detail (ties and slab detail).</span></div>
         <div class="help-row"><span class="keys"><kbd>L</kbd></span><span class="desc">Cycle the part labels: Off, Limited, Printed, All.</span></div>
         <div class="help-row"><span class="keys"><kbd>P</kbd></span><span class="desc">Show or hide the green dots and orange arrows.</span></div>
+        <div class="help-row"><span class="keys"><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd></span><span class="desc">Nudge the selection 1&nbsp;mm (<kbd>Shift</kbd>: 10&nbsp;mm).</span></div>
+        <div class="help-row"><span class="keys"><kbd>[</kbd> / <kbd>]</kbd></span><span class="desc">Select the previous / next piece; the view follows.</span></div>
         <div class="help-row"><span class="keys"><kbd>Q</kbd> / <kbd>E</kbd></span><span class="desc">Turn the selection, or the piece, set or label being held, 15° anticlockwise / clockwise. Joins to pieces outside the selection break, as when dragging.</span></div>
         <div class="help-row"><span class="keys"><kbd>F</kbd></span><span class="desc">Flip the selected or held piece.</span></div>
         <div class="help-row"><span class="keys"><kbd>G</kbd></span><span class="desc">Open or close Gradient Mode.</span></div>
@@ -985,6 +1037,12 @@ const STRINGS = {
     'gapfill.btn.cancel': '✗ Cancel Fill Gap',
     'png.btn': 'Export PNG',
     'png.btn.selection': 'Export Selected as PNG',
+    // Disabled buttons' tooltips: what would enable them (renderSelection).
+    'gapfill.disabled.title': 'Select an open end of single track (a green dot) first, then Fill Gap joins it to the nearest end it can reach',
+    'gapfill.disabled.gradient.title': 'Not available in Gradient Mode',
+    'elevate.disabled.title': 'Select some track first',
+    'elevate.disabled.busy.title': 'Finish or leave the current mode first',
+    'png.disabled.title': 'The layout is empty: place some track first',
     'png.title': 'Export PNG',
     'png.title.selection': 'Export Selected as PNG',
     'png.save': 'Save PNG',
@@ -1074,6 +1132,11 @@ const STRINGS = {
 
     'hint.default': 'Drag a piece from the left panel onto the layout to place it freely, click one to drop it in the middle of the view, or click a green port then click a piece to attach it there.',
     'empty.start': 'To start, click on or drag a piece from the palette to the left, or select a Unitrack Set or layout below.',
+    'empty.gestures': 'New here? See the Gestures guide',
+    // Narrow screens: the buttons opening the palette and the side panel as drawers.
+    'drawer.palette': 'Parts',
+    'drawer.info': 'Panel',
+    'gest.reducedMotion': 'Your system asks for reduced motion, so the demos are still. Hover over or focus a demo to play it.',
     // Hover hints: what the pointer is over, or the action under way.
     // Functions take (canMutate, canFlip) where the hint names Shift+scroll or F.
     'hover.c1': 'Drag empty space to pan, or use W A S D. Scroll to zoom. Right click for marquee selection (Shift+right-drag adds to the selection). Ctrl+A selects everything.',
@@ -2655,6 +2718,15 @@ function beginInteraction(mode){
 function endInteraction(mode){
   if(interactionMode===mode) interactionMode = 'idle';
 }
+// Pointer Events drive every press and drag, so a finger or a pen works as the
+// mouse does: the same targets, e.button and modifier keys. Only the primary
+// pointer reaches these handlers (TOUCH, in PAN, ZOOM...). A drag's end listens
+// for pointercancel too: when the browser takes the pointer back (a system
+// gesture, a scroll it claimed), the gesture ends as a release would.
+function onPointerEnd(target, fn){
+  target.addEventListener('pointerup', fn);
+  target.addEventListener('pointercancel', fn);
+}
 
 /* ============================================================
    UNDO / REDO
@@ -2663,18 +2735,47 @@ function endInteraction(mode){
    moment it commits to a change — never per mousemove.
    ============================================================ */
 const MAX_HISTORY = 50;
+// And a memory cap: a very large layout keeps fewer steps rather than holding
+// 50 copies of itself. Sizes are JSON lengths (characters, ~bytes), measured
+// once per snapshot as it enters the undo stack.
+const MAX_HISTORY_BYTES = 8*1024*1024;
 let undoStack = [];
 let redoStack = [];
+let undoBytes = 0;
+const _snapBytes = new WeakMap(); // snapshot -> its size, so it's measured once
+// Changes since the layout was last saved to a file, started afresh or loaded:
+// what the beforeunload guard (SAVE / LOAD) protects.
+let layoutDirty = false;
+// structuredClone where there is one: a deep copy without a JSON round trip.
 function snapshotState(){
-  return JSON.parse(JSON.stringify({pieces, connections, nextId, tableBoxes, joiners}));
+  const state = {pieces, connections, nextId, tableBoxes, joiners};
+  return typeof structuredClone==='function' ? structuredClone(state) : JSON.parse(JSON.stringify(state));
+}
+function snapshotBytes(snap){
+  let n = _snapBytes.get(snap);
+  if(n==null){ n = JSON.stringify(snap).length; _snapBytes.set(snap, n); }
+  return n;
+}
+function pushUndo(snap){
+  undoStack.push(snap);
+  undoBytes += snapshotBytes(snap);
+  // Oldest first; the newest step always stays, however big.
+  while(undoStack.length>MAX_HISTORY || (undoStack.length>1 && undoBytes>MAX_HISTORY_BYTES)){
+    undoBytes -= snapshotBytes(undoStack.shift());
+  }
+}
+function popUndo(){
+  const snap = undoStack.pop();
+  undoBytes -= snapshotBytes(snap);
+  return snap;
 }
 // `snapshot` is optional: for an action that might change nothing (say, an
 // attach the superelevation gate refuses), take it BEFORE the action and call
 // this only on success, so a refused action leaves no empty undo step.
 function pushHistory(snapshot){
-  undoStack.push(snapshot || snapshotState());
-  if(undoStack.length>MAX_HISTORY) undoStack.shift();
+  pushUndo(snapshot || snapshotState());
   redoStack.length = 0;
+  layoutDirty = true;
   updateHistoryButtons();
   scheduleAutosave();
 }
@@ -2711,13 +2812,15 @@ function restoreState(snap){
 function undo(){
   if(!undoStack.length) return;
   redoStack.push(snapshotState());
-  restoreState(undoStack.pop());
+  restoreState(popUndo());
+  layoutDirty = true;
   scheduleAutosave();
 }
 function redo(){
   if(!redoStack.length) return;
-  undoStack.push(snapshotState());
+  pushUndo(snapshotState());
   restoreState(redoStack.pop());
+  layoutDirty = true;
   scheduleAutosave();
 }
 function updateHistoryButtons(){
@@ -2834,7 +2937,7 @@ function appendPadlockIcon(parent, wx, wy, locked, onClick, hint){
     fill: locked?'#3a4048':'#1a2530', stroke: locked?'#7a838d':'#4fb0ff', 'stroke-width':1}));
   // invisible hit zone, already in counter-scaled units
   g.appendChild(el('circle',{cx:0, cy:3, r:14, fill:'transparent'}));
-  g.addEventListener('mousedown', ev=>{ ev.stopPropagation(); ev.preventDefault(); });
+  g.addEventListener('pointerdown', ev=>{ ev.stopPropagation(); ev.preventDefault(); });
   g.addEventListener('click', ev=>{ ev.stopPropagation(); onClick(); });
   parent.appendChild(g);
 }
@@ -5747,7 +5850,11 @@ function drawPiece(g, type, style){
    ============================================================ */
 function isOverCanvas(clientX, clientY){
   const r = document.getElementById('canvasWrap').getBoundingClientRect();
-  return clientX>=r.left && clientX<=r.right && clientY>=r.top && clientY<=r.bottom;
+  if(!(clientX>=r.left && clientX<=r.right && clientY>=r.top && clientY<=r.bottom)) return false;
+  // On a narrow screen an open drawer lies over the canvas: a drop there is
+  // on the drawer, not the layout under it. (Side by side, never true.)
+  const top = document.elementFromPoint(clientX, clientY);
+  return !(top && top.closest('#paletteCol, #info, .drawer-toggle'));
 }
 // The world point at the middle of the canvas.
 // Where a palette click with no end to attach to puts its piece: the middle of
@@ -6057,7 +6164,7 @@ function getScene(){
   const defs = el('defs',{}), world = el('g',{}), under = el('g',{}), over = el('g',{});
   world.append(under, getPieceLayer(), over);
   svg.replaceChildren(defs, world);
-  world.addEventListener('mousedown', ev=>{ const a = hitActionOf(ev); if(a){ ev.stopPropagation(); if(a.down) a.down(ev); } });
+  world.addEventListener('pointerdown', ev=>{ const a = hitActionOf(ev); if(a){ ev.stopPropagation(); if(a.down) a.down(ev); } });
   world.addEventListener('click', ev=>{
     const a = hitActionOf(ev);
     if(!a) return;
@@ -6300,7 +6407,7 @@ function drawTableBoxBodies(frame){
     } else {
       rect.style.cursor = 'move';
       rect.dataset.hint = 't1';
-      rect.addEventListener('mousedown', (ev)=>{
+      rect.addEventListener('pointerdown', (ev)=>{
         if(ev.button!==0) return; // let right-drag through to the marquee
         if(!beginInteraction('boxDrag')) return;
         ev.stopPropagation(); ev.preventDefault();
@@ -6315,13 +6422,13 @@ function drawTableBoxBodies(frame){
 
 // Pieces are retained between renders: each keeps its DOM, and is redrawn
 // only when its `key` (everything drawPiece and the fills read) changes. A move
-// only rewrites the transform. One delegated mousedown on the layer replaces a
+// only rewrites the transform. One delegated pointerdown on the layer replaces a
 // listener per piece. Each piece sits in a wrapper beside its own <defs>, which
 // holds its slope gradient and elevation mask.
 function getPieceLayer(){
   if(!_pieceLayer){
     _pieceLayer = el('g',{});
-    _pieceLayer.addEventListener('mousedown', onPieceMouseDown);
+    _pieceLayer.addEventListener('pointerdown', onPieceMouseDown);
   }
   return _pieceLayer;
 }
@@ -6625,7 +6732,7 @@ function appendIconButton(world, at, r, fill, glyph, hint, onClick){
   g.appendChild(el('circle',{cx:0,cy:0,r, fill, stroke:'#0d1a12','stroke-width':1.5}));
   g.appendChild(el('path',{d:glyph.d, stroke:'#0d1a12','stroke-width':glyph.w,
     fill:'none','stroke-linecap':'round', ...(glyph.join ? {'stroke-linejoin':'round'} : {}), style:'pointer-events:none;'}));
-  g.addEventListener('mousedown', ev=>{ ev.stopPropagation(); });
+  g.addEventListener('pointerdown', ev=>{ ev.stopPropagation(); });
   g.addEventListener('click', ev=>{ ev.stopPropagation(); onClick(); });
   world.appendChild(g);
 }
@@ -6814,7 +6921,7 @@ function drawTableBoxOverlays(frame){
           fill:SELECTION_BLUE, stroke:'#0d1a12', 'stroke-width':1/view.scale, 'data-hint':'t2',
         });
         handle.style.cursor = CURSOR_FOR_CORNER[corner];
-        handle.addEventListener('mousedown',(ev)=>{
+        handle.addEventListener('pointerdown',(ev)=>{
           if(ev.button!==0) return;
           if(!beginInteraction('boxResize')) return;
           ev.stopPropagation(); ev.preventDefault();
@@ -7112,7 +7219,7 @@ function appendDimensionLabel(world, box, dim){
       else if(ev.key==='Escape'){ cancelled = true; editingBoxDimension = null; endInteraction('boxDimensionEdit'); render(); }
     });
     input.addEventListener('blur', commit);
-    wrap.addEventListener('mousedown', ev=>{ ev.stopPropagation(); if(ev.target!==input){ ev.preventDefault(); input.focus(); } });
+    wrap.addEventListener('pointerdown', ev=>{ ev.stopPropagation(); if(ev.target!==input){ ev.preventDefault(); input.focus(); } });
     wrap.append(input, unit);
     fo.appendChild(wrap);
     g.appendChild(fo);
@@ -7130,7 +7237,7 @@ function appendDimensionLabel(world, box, dim){
     fill:'var(--text)', 'font-size':'11', style:'user-select:none;'});
   label.textContent = fmtLen(dim==='w' ? box.w : box.h);
   hit.appendChild(label);
-  hit.addEventListener('mousedown', ev=>ev.stopPropagation());
+  hit.addEventListener('pointerdown', ev=>ev.stopPropagation());
   hit.addEventListener('click', ev=>{
     ev.stopPropagation();
     if(!beginInteraction('boxDimensionEdit')) return;
@@ -7263,6 +7370,7 @@ function renderSelection(){
   partsBtn.disabled = empty;
   const pngBtn = document.getElementById('pngBtn');
   pngBtn.disabled = empty;
+  pngBtn.title = empty ? tr('png.disabled.title') : ''; // a disabled button says what would enable it
   pngBtn.textContent = tr(pngSelectionOnly() ? 'png.btn.selection' : 'png.btn');
   if(selectedPort){
     setStateHint('', tr('hover.c6'));
@@ -7323,11 +7431,13 @@ function renderSelection(){
   gapBtn.textContent = tr(gapFill ? 'gapfill.btn.cancel' : 'gapfill.btn');
   gapBtn.classList.toggle('neutral', !gapFill); // red while it cancels, as the other exit buttons
   gapBtn.disabled = !gapFill && (!gapFillEnd(selectedPort) || !!gradientTool);
+  gapBtn.title = !gapBtn.disabled ? '' : tr(gradientTool ? 'gapfill.disabled.gradient.title' : 'gapfill.disabled.title');
   // Elevate Selection, or Lower Selection when everything selected is already
   // elevated (toggleSelectionElevation).
   const elevateBtn = document.getElementById('elevateBtn');
   elevateBtn.textContent = tr(selectionAllElevated() ? 'elevate.btn.lower' : 'elevate.btn');
   elevateBtn.disabled = !selectedPieces.size || interactionMode!=='idle';
+  elevateBtn.title = !elevateBtn.disabled ? '' : tr(selectedPieces.size ? 'elevate.disabled.busy.title' : 'elevate.disabled.title');
   // Power View: the button's label, and the scale under it while it's on.
   // Off in Gradient Mode, whose colours would hide it.
   const powerBtn = document.getElementById('powerBtn'), powerInfo = document.getElementById('powerInfo');
@@ -7443,9 +7553,9 @@ function hintTargetOf(node){
   if(!(node instanceof Element)) return null;
   return node.closest('[data-hint]') || (node.closest('#stage') ? document.getElementById('stage') : null);
 }
-// mousemove, not mouseover: after a render the element under a still pointer
-// is replaced, and the first small move must pick up its successor.
-document.addEventListener('mousemove', e=>{
+// pointermove, not pointerover: after a render the element under a still
+// pointer is replaced, and the first small move must pick up its successor.
+document.addEventListener('pointermove', e=>{
   lastPointer = {x:e.clientX, y:e.clientY};
   const t = hintTargetOf(e.target);
   if(t===hoverHintEl) return;
@@ -7674,7 +7784,7 @@ function createSetButton(set){
   textWrap.innerHTML = `${set.name}<span class="code">${set.no}</span>`;
   b.appendChild(textWrap);
   b.appendChild(buildSetIcon(set));
-  b.addEventListener('mousedown', ev=>{
+  b.addEventListener('pointerdown', ev=>{
     if(ev.button!==0) return;
     ev.preventDefault();
     if(stockBlocks(setTypeIds(set), [])){ renderSelection(); return; }
@@ -7734,6 +7844,7 @@ function buildEmptyStart(){
     });
     b.addEventListener('mouseleave', hidePreview);
     b.addEventListener('click', ()=>{
+      closeDrawersForDrop(); // as for a palette tap: the drawer would hide the set
       const c = viewCentreWorld();
       placeSet(set, c.x, c.y, 0);
       if(isLayoutEmpty()) return; // refused (Limited Mode); the hint says why
@@ -7743,24 +7854,26 @@ function buildEmptyStart(){
     row.appendChild(b);
   });
 }
-window.addEventListener('mousemove', e=>{
+window.addEventListener('pointermove', e=>{
   if(!setDrag) return;
   if(!setDrag.moved){
     if(Math.hypot(e.clientX-setDrag.startX, e.clientY-setDrag.startY) <= 4) return;
     setDrag.moved = true;
   }
   if(isOverCanvas(e.clientX, e.clientY)){
+    closeDrawersForDrop();
     const w = screenToWorld(e.clientX, e.clientY);
     setDrag.worldX = w.x; setDrag.worldY = w.y;
   } else { setDrag.worldX = null; setDrag.worldY = null; }
   invalidate();
 });
-window.addEventListener('mouseup', e=>{
+onPointerEnd(window, e=>{
   if(!setDrag) return;
   const d = setDrag;
   setDrag = null;
   endInteraction('setDrag');
-  if(!d.moved){
+  if(!d.moved && e.type==='pointercancel') invalidate(); // a press the browser took (a palette scroll) places nothing
+  else if(!d.moved){
     const c = viewCentreWorld();
     placeSet(d.set, c.x, c.y, 0);
   } else if(d.worldX!=null){
@@ -7854,7 +7967,7 @@ function clearPaletteSearch(){
   applyPaletteFilter();
   return true;
 }
-window.addEventListener('mousedown', e=>{
+window.addEventListener('pointerdown', e=>{
   const input = document.getElementById('paletteSearch');
   if(document.activeElement===input && !e.target.closest('#paletteSearchWrap')) input.blur();
 }, true);
@@ -7960,7 +8073,7 @@ function createPaletteButton(t){
   b.appendChild(buildPieceIcon(t));
   // Drag onto the canvas to place freely; a plain click attaches to the
   // selected port.
-  b.addEventListener('mousedown', paletteDragStartHandler(t.id));
+  b.addEventListener('pointerdown', paletteDragStartHandler(t.id));
   return b;
 }
 document.getElementById('deleteBtn').addEventListener('click',()=>{
@@ -8367,7 +8480,7 @@ function applyDragTransform(){
     ds.loopClosures = [];
   }
 }
-window.addEventListener('mousemove', e=>{
+window.addEventListener('pointermove', e=>{
   if(!dragState) return;
   dragState.dxScreen = e.clientX - dragState.startX;
   dragState.dyScreen = e.clientY - dragState.startY;
@@ -8379,7 +8492,7 @@ window.addEventListener('mousemove', e=>{
     invalidate();
   }
 });
-window.addEventListener('mouseup', ()=>{
+onPointerEnd(window, ()=>{
   if(dragState){
     if(dragState.moved){
       if(dragState.snapTarget) finalizeSnap(dragState);
@@ -8405,13 +8518,14 @@ function updatePaletteSnap(){
     if(fit) pd.typeId = fit;
   }
 }
-window.addEventListener('mousemove', e=>{
+window.addEventListener('pointermove', e=>{
   if(!paletteDrag) return;
   if(!paletteDrag.moved && Math.hypot(e.clientX-paletteDrag.startX, e.clientY-paletteDrag.startY) > 4){
     paletteDrag.moved = true;
   }
   if(!paletteDrag.moved) return;
   if(isOverCanvas(e.clientX, e.clientY)){
+    closeDrawersForDrop();
     const {x,y} = screenToWorld(e.clientX, e.clientY);
     paletteDrag.worldX = x; paletteDrag.worldY = y;
   } else {
@@ -8420,14 +8534,18 @@ window.addEventListener('mousemove', e=>{
   updatePaletteSnap();
   invalidate();
 });
-window.addEventListener('mouseup', e=>{
+onPointerEnd(window, e=>{
   if(!paletteDrag) return;
   const {typeId, moved, snapTarget, rot, manualLength} = paletteDrag;
   paletteDrag = null;
   endInteraction('paletteDrag');
+  // A press the browser took back without a move (a vertical swipe scrolling
+  // the palette) isn't a click: it places nothing.
+  if(!moved && e.type==='pointercancel'){ invalidate(); return; }
   // Shift+wheel or F mid-drag can swap to a type that isn't in stock.
   if(stockBlocks(withPartner(typeId), [])){ invalidate(); return; }
   if(!moved){
+    closeDrawersForDrop(); // on a phone the palette drawer covers the canvas: get it out of the way so the new piece can be seen
     // Plain click on a palette button: attach if a port is selected (a platform
     // only to a platform end it can join). Otherwise it goes in the middle of
     // the view, selected, staggered by clickSpawnPoint, and a platform snaps
@@ -8585,7 +8703,7 @@ function drawTextBoxes(frame){
     else {
       rect.style.cursor = 'move';
       rect.dataset.hint = 'x1';
-      rect.addEventListener('mousedown', ev=>{
+      rect.addEventListener('pointerdown', ev=>{
         if(ev.button!==0) return;
         ev.stopPropagation(); ev.preventDefault();
         const now = Date.now();
@@ -8621,7 +8739,7 @@ function drawTextBoxOverlay(world, box){
     const handle = el('rect', {x:p.x-HANDLE_R, y:p.y-HANDLE_R, width:HANDLE_R*2, height:HANDLE_R*2,
       fill:SELECTION_BLUE, stroke:'#0d1a12', 'stroke-width':1/view.scale, 'data-hint':'x2'});
     handle.style.cursor = 'nwse-resize';
-    handle.addEventListener('mousedown', ev=>{
+    handle.addEventListener('pointerdown', ev=>{
       if(ev.button!==0) return;
       if(!beginInteraction('boxResize')) return;
       ev.stopPropagation(); ev.preventDefault();
@@ -8636,7 +8754,7 @@ function drawTextBoxOverlay(world, box){
   }, 'x3');
 }
 // Corner drag: the text scales with the pointer's distance from the centre.
-window.addEventListener('mousemove', e=>{
+window.addEventListener('pointermove', e=>{
   if(!textResizeState) return;
   const box = tableBoxes[textResizeState.boxId];
   if(!box){ textResizeState = null; endInteraction('boxResize'); return; }
@@ -8647,7 +8765,7 @@ window.addEventListener('mousemove', e=>{
   fitTextBox(box);
   invalidate();
 });
-window.addEventListener('mouseup', ()=>{
+onPointerEnd(window, ()=>{
   if(!textResizeState) return;
   if(textResizeState.moved) scheduleAutosave();
   textResizeState = null;
@@ -8929,11 +9047,12 @@ function startJoinerDrag(from, ev, typeId){
   ev.preventDefault();
   joinerDrag = {from, typeId, startX:ev.clientX, startY:ev.clientY, moved:false, worldX:null, worldY:null, target:null};
 }
-window.addEventListener('mousemove', e=>{
+window.addEventListener('pointermove', e=>{
   if(!joinerDrag) return;
   if(!joinerDrag.moved && Math.hypot(e.clientX-joinerDrag.startX, e.clientY-joinerDrag.startY) > 4) joinerDrag.moved = true;
   if(!joinerDrag.moved) return;
   if(isOverCanvas(e.clientX, e.clientY)){
+    closeDrawersForDrop();
     const {x, y} = screenToWorld(e.clientX, e.clientY);
     joinerDrag.worldX = x; joinerDrag.worldY = y;
     joinerDrag.target = joinerTargetAt(x, y, joinerDrag.from, joinerDrag.typeId);
@@ -8943,11 +9062,12 @@ window.addEventListener('mousemove', e=>{
   }
   invalidate();
 });
-window.addEventListener('mouseup', ()=>{
+onPointerEnd(window, e=>{
   if(!joinerDrag) return;
   const {from, typeId, moved, target} = joinerDrag;
   joinerDrag = null;
   endInteraction('joinerDrag');
+  if(!moved && e.type==='pointercancel'){ invalidate(); return; } // a press the browser took isn't a click
   if(!moved){
     if(from) setSelection({joiner:from});
     // A palette click fits a TJ to the selected open end.
@@ -8998,7 +9118,7 @@ function createJoinerButton(t){
   stock.style.display = 'none';
   b.appendChild(stock);
   b.appendChild(buildJoinerIcon(t));
-  b.addEventListener('mousedown', ev=>startJoinerDrag(null, ev, t.id));
+  b.addEventListener('pointerdown', ev=>startJoinerDrag(null, ev, t.id));
   return b;
 }
 // The PNG's joiner marks, on the exported pieces' joints: a black arrow
@@ -9065,11 +9185,11 @@ function pngJoinerMarks(ids, fontMm, edge, items, avoid){
 
 /* ============================================================
    TABLETOP BOX
-   Move and resize, each a mousedown (wired where the box is drawn) plus
-   window mousemove/mouseup. Unlike piece drags there are no connections
+   Move and resize, each a pointerdown (wired where the box is drawn) plus
+   window pointermove/pointerup. Unlike piece drags there are no connections
    to break, so history is snapshotted once at gesture start.
    ============================================================ */
-window.addEventListener('mousemove', e=>{
+window.addEventListener('pointermove', e=>{
   if(!boxDragState) return;
   const box = tableBoxes[boxDragState.boxId];
   if(!box) { boxDragState = null; endInteraction('boxDrag'); return; } // deleted during the drag (e.g. by undo)
@@ -9085,14 +9205,14 @@ window.addEventListener('mousemove', e=>{
   box.y = snapped.y;
   invalidate();
 });
-window.addEventListener('mouseup', ()=>{
+onPointerEnd(window, ()=>{
   if(boxDragState){
     if(boxDragState.moved) scheduleAutosave();
     boxDragState = null;
     endInteraction('boxDrag');
   }
 });
-window.addEventListener('mousemove', e=>{
+window.addEventListener('pointermove', e=>{
   if(!boxResizeState) return;
   const box = tableBoxes[boxResizeState.boxId];
   if(!box) { boxResizeState = null; endInteraction('boxResize'); return; }
@@ -9117,7 +9237,7 @@ window.addEventListener('mousemove', e=>{
   box.x=x; box.y=y; box.w=w; box.h=h;
   invalidate();
 });
-window.addEventListener('mouseup', ()=>{
+onPointerEnd(window, ()=>{
   if(boxResizeState){
     if(boxResizeState.moved) scheduleAutosave();
     boxResizeState = null;
@@ -9125,7 +9245,7 @@ window.addEventListener('mouseup', ()=>{
   }
 });
 // Padlock edge tracking; re-renders only when the edge changes.
-window.addEventListener('mousemove', e=>{
+window.addEventListener('pointermove', e=>{
   if(!selectedBoxId || interactionMode!=='idle' || panning) return;
   const box = tableBoxes[selectedBoxId];
   if(!box || box.locked || isTextBox(box)) return;
@@ -9165,7 +9285,7 @@ let panning=false, last=null, panMoved=false;
 // mid-drag.
 let boxSelect = null;
 svg.addEventListener('contextmenu', e=>e.preventDefault()); // no browser context menu over the canvas
-svg.addEventListener('mousedown', e=>{
+svg.addEventListener('pointerdown', e=>{
   if(e.button===2){
     e.preventDefault();
     // Needs no other mode active. In Gradient Mode it would reopen a way to
@@ -9182,7 +9302,7 @@ svg.addEventListener('mousedown', e=>{
   panning=true; panMoved=false; last={x:e.clientX,y:e.clientY};
   if(!isLayoutEmpty()) svg.classList.add('panning');
 });
-window.addEventListener('mousemove', e=>{
+window.addEventListener('pointermove', e=>{
   if(boxSelect){
     const {x,y} = screenToWorld(e.clientX, e.clientY);
     boxSelect.x1 = x; boxSelect.y1 = y;
@@ -9196,7 +9316,7 @@ window.addEventListener('mousemove', e=>{
   clampView();
   requestViewFrame();
 });
-window.addEventListener('mouseup', ()=>{
+onPointerEnd(window, ()=>{
   if(boxSelect){
     const minX=Math.min(boxSelect.x0,boxSelect.x1), maxX=Math.max(boxSelect.x0,boxSelect.x1);
     const minY=Math.min(boxSelect.y0,boxSelect.y1), maxY=Math.max(boxSelect.y0,boxSelect.y1);
@@ -9219,6 +9339,64 @@ window.addEventListener('mouseup', ()=>{
   }
   panning=false; svg.classList.remove('panning');
 });
+
+// TOUCH. Every handler above serves one pointer: the primary one (the mouse,
+// a pen, the first finger down). Other pointers never reach them, so a second
+// finger can't jump a drag to where it landed. Two fingers on the canvas
+// instead pinch-zoom (about their midpoint, as the wheel zooms about the
+// cursor) and pan together; whatever the first finger had begun (a pan, a
+// piece drag, a marquee) ends there as if released, and neither finger acts
+// again until it lifts. Capture phase on window, ahead of every listener.
+const stageTouches = new Map(); // pointerId -> {x, y}: fingers down on the canvas
+const pinchPointers = new Set(); // fingers that were part of a pinch, swallowed until lifted
+let pinch = null; // {x, y, dist}: the two fingers' midpoint and spread at the last move
+let _endingForPinch = false; // our own pointercancel for the first finger, let through
+function touchPair(){
+  const [a, b] = [...stageTouches.values()];
+  return {x:(a.x+b.x)/2, y:(a.y+b.y)/2, dist:Math.max(1, Math.hypot(a.x-b.x, a.y-b.y))};
+}
+window.addEventListener('pointerdown', e=>{
+  if(e.pointerType==='touch' && e.target.closest && e.target.closest('#stage') && !openDialogKeys()){
+    stageTouches.set(e.pointerId, {x:e.clientX, y:e.clientY});
+    if(stageTouches.size===2 && !pinch){
+      // End the first finger's gesture: a pan stops without the deselect a
+      // plain tap would make.
+      const [firstId] = stageTouches.keys(), first = stageTouches.get(firstId);
+      if(panning) panMoved = true;
+      _endingForPinch = true;
+      try{ window.dispatchEvent(new PointerEvent('pointercancel', {pointerId:firstId, pointerType:'touch', isPrimary:true, clientX:first.x, clientY:first.y})); }
+      finally{ _endingForPinch = false; }
+      stageTouches.forEach((_, id)=>pinchPointers.add(id));
+      pinch = touchPair();
+    }
+  }
+  if(!e.isPrimary || pinchPointers.has(e.pointerId)) e.stopImmediatePropagation();
+}, true);
+window.addEventListener('pointermove', e=>{
+  if(stageTouches.has(e.pointerId)) stageTouches.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if(pinch && stageTouches.size===2 && pinchPointers.has(e.pointerId)){
+    const now = touchPair(), r = document.getElementById('canvasWrap').getBoundingClientRect();
+    view.x += now.x - pinch.x; view.y += now.y - pinch.y; // the pan, then the zoom about where the fingers are now
+    zoomAt(now.x - r.left, now.y - r.top, now.dist/pinch.dist, true); // clamps, and frames like a wheel zoom
+    pinch = now;
+  }
+  if(!e.isPrimary || pinchPointers.has(e.pointerId)){ e.stopImmediatePropagation(); return; }
+  // A one-finger (or pen) drag holds on to its pointer, so it keeps every move
+  // even when the element it began on is redrawn away. Not the mouse: its
+  // drags already follow it, and capture would retarget its clicks.
+  if(e.pointerType!=='mouse' && (panning || PAN_DRAG_MODES.has(interactionMode))
+     && !document.documentElement.hasPointerCapture(e.pointerId)){
+    try{ document.documentElement.setPointerCapture(e.pointerId); }catch(err){ /* pointer already gone */ }
+  }
+}, true);
+function endStageTouch(e){
+  if(_endingForPinch) return; // the first finger is still down: only its gesture ends
+  stageTouches.delete(e.pointerId);
+  if(stageTouches.size<2) pinch = null;
+  if(!e.isPrimary || pinchPointers.has(e.pointerId)){ pinchPointers.delete(e.pointerId); e.stopImmediatePropagation(); }
+}
+window.addEventListener('pointerup', endStageTouch, true);
+window.addEventListener('pointercancel', endStageTouch, true);
 // Wheel while holding a piece rotates it 15° per notch. On window so it works
 // before the cursor reaches the canvas.
 window.addEventListener('wheel', e=>{
@@ -10038,12 +10216,11 @@ document.getElementById('powerInfo').addEventListener('focusout', e=>{
 let helpOpen = false;
 function openHelp(){
   helpOpen = true;
-  document.getElementById('helpOverlay').style.display = 'flex';
-  document.getElementById('helpBtn').setAttribute('aria-expanded','true');
   const search = document.getElementById('helpSearch');
   search.value = '';
+  showDialog('helpOverlay', search);
+  document.getElementById('helpBtn').setAttribute('aria-expanded','true');
   filterHelp();
-  search.focus();
 }
 // The guide's search, as the Gestures window's: a block (a control row, a
 // paragraph, a list item) stays if every word typed is in it, a section whose
@@ -10080,7 +10257,7 @@ function filterHelp(){
 document.getElementById('helpSearch').addEventListener('input', filterHelp);
 function closeHelp(){
   helpOpen = false;
-  document.getElementById('helpOverlay').style.display = 'none';
+  hideDialog('helpOverlay');
   document.getElementById('helpBtn').setAttribute('aria-expanded','false');
 }
 document.getElementById('helpBtn').addEventListener('click', openHelp);
@@ -10768,8 +10945,8 @@ function buildGestCard(demo){
   const ease = f=>f<0.5 ? 2*f*f : 1-2*(1-f)*(1-f);
   return {card, text:searchKey(`${cap.textContent} ${demo.keys.join(' ')}`),
     reset(){ drawn = -1; },
-    tick(now){
-      const t = (now-gestStart) % total;
+    tick(now, start=gestStart){
+      const t = (now-start) % total;
       const i = ends.findIndex(e=>t<e);
       if(i<0){ if(drawn!=='rest'){ show(states[states.length-1], states[states.length-1], 1); drawn = 'rest'; } return; }
       const step = steps[i];
@@ -10780,7 +10957,7 @@ function buildGestCard(demo){
 }
 function openGestures(){
   gestOpen = true;
-  document.getElementById('gestOverlay').style.display = 'flex';
+  showDialog('gestOverlay', document.getElementById('gestSearch'));
   document.getElementById('gestBtn').setAttribute('aria-expanded','true');
   hidePreview();
   gestCards = [];
@@ -10802,23 +10979,47 @@ function openGestures(){
   // A card scrolled out of view (or filtered out) isn't drawn; back in view,
   // it redraws at once at the loop's current moment.
   const byCard = new Map(gestCards.map(c=>[c.card, c]));
+  // Reduced motion (the system setting): each demo holds its first frame,
+  // and plays from the start only while hovered or focused (tabindex makes it
+  // reachable by keyboard); a note at the top says so.
+  const still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const showFirst = c=>{ c.reset(); c.tick(0, 0); };
+  if(still){
+    const note = document.createElement('p');
+    note.className = 'parts-note';
+    note.textContent = tr('gest.reducedMotion');
+    document.getElementById('gestBody').prepend(note);
+    gestCards.forEach(c=>{
+      c.card.tabIndex = 0;
+      const play = ()=>{ if(c.playing) return; c.playing = true; c.playStart = performance.now(); c.reset(); };
+      const stop = ()=>{ if(c.card.matches(':hover') || c.card.contains(document.activeElement)) return; c.playing = false; if(c.onScreen) showFirst(c); };
+      c.card.addEventListener('pointerenter', play);
+      c.card.addEventListener('focusin', play);
+      c.card.addEventListener('pointerleave', ()=>setTimeout(stop));
+      c.card.addEventListener('focusout', ()=>setTimeout(stop)); // after focus has moved, so a move within the card keeps it playing
+    });
+  }
   gestObserver = new IntersectionObserver(entries=>entries.forEach(en=>{
     const c = byCard.get(en.target);
     c.onScreen = en.isIntersecting;
-    if(c.onScreen) c.reset();
+    if(c.onScreen){ if(still && !c.playing) showFirst(c); else c.reset(); }
   }), {root:document.getElementById('gestBody')});
   gestCards.forEach(c=>gestObserver.observe(c.card));
-  const frame = now=>{ gestCards.forEach(c=>{ if(c.onScreen) c.tick(now); }); gestRaf = requestAnimationFrame(frame); };
+  const frame = now=>{
+    gestCards.forEach(c=>{ if(c.onScreen && (!still || c.playing)) c.tick(now, still ? c.playStart : gestStart); });
+    gestRaf = requestAnimationFrame(frame);
+  };
   gestRaf = requestAnimationFrame(frame);
 }
 function closeGestures(){
   gestOpen = false;
   cancelAnimationFrame(gestRaf);
   if(gestObserver){ gestObserver.disconnect(); gestObserver = null; }
-  document.getElementById('gestOverlay').style.display = 'none';
+  hideDialog('gestOverlay');
   document.getElementById('gestBtn').setAttribute('aria-expanded','false');
 }
 document.getElementById('gestBtn').addEventListener('click', openGestures);
+document.getElementById('emptyGestBtn').addEventListener('click', openGestures); // the start screen's "New here?"
 document.getElementById('gestCloseBtn').addEventListener('click', closeGestures);
 document.getElementById('gestOverlay').addEventListener('click', e=>{
   if(e.target.id==='gestOverlay') closeGestures();
@@ -10919,12 +11120,12 @@ function openPartsList(){
   fillPartsTable(document.getElementById('partsTable'), partsHeaders(),
     partsRows.map(r=>[String(r.qty), r.partCode || '&mdash;', r.catalogNo || '&mdash;', r.label]),
     [String(total), tr('parts.total'), '', '']);
-  document.getElementById('partsOverlay').style.display = 'flex';
+  showDialog('partsOverlay');
   partsOpen = true;
 }
 function closePartsList(){
   partsOpen = false;
-  document.getElementById('partsOverlay').style.display = 'none';
+  hideDialog('partsOverlay');
 }
 document.getElementById('partsBtn').addEventListener('click', openPartsList);
 document.getElementById('partsCloseBtn').addEventListener('click', closePartsList);
@@ -11066,12 +11267,12 @@ function openPacks(){
     rows.map(r=>[String(r.qty), r.catalogNo || '&mdash;', r.contents, r.unconfirmed ? flag : '']),
     [String(packs), tr('parts.total'), '', '']);
   document.getElementById('packsSpare').innerHTML = spare.length ? tr('packs.spare', spare.join(', ')) : tr('packs.noSpare');
-  document.getElementById('packsOverlay').style.display = 'flex';
+  showDialog('packsOverlay');
   packsOpen = true;
 }
 function closePacks(){
   packsOpen = false;
-  document.getElementById('packsOverlay').style.display = 'none';
+  hideDialog('packsOverlay');
 }
 document.getElementById('partsPacksBtn').addEventListener('click', openPacks);
 // The pack view reads as the parts list's second page: Back (or Escape)
@@ -11250,7 +11451,7 @@ function openInventory(){
   buildInventoryList();
   document.getElementById('invSearch').value = '';
   document.getElementById('invPackMsg').textContent = '';
-  document.getElementById('invOverlay').style.display = 'flex';
+  showDialog('invOverlay', document.getElementById('invSearch'));
   invOpen = true;
   updateInvTotal();
 }
@@ -11261,7 +11462,7 @@ function closeInventory(commit){
   }
   invOpen = false;
   hideInvPreview();
-  document.getElementById('invOverlay').style.display = 'none';
+  hideDialog('invOverlay');
   // Limited Mode with nothing owned would grey the whole palette.
   if(limitedMode && inventorySize(inventory)===0) setLimitedMode(false);
   _paletteStockSig = null;
@@ -11457,7 +11658,7 @@ const THEMES = {
   default: null,
   light: {
     '--bg':'#eef1f5', '--panel':'#ffffff', '--panel-border':'#dbe0e6',
-    '--text':'#1c222b', '--text-dim':'#6b7480',
+    '--text':'#1c222b', '--text-dim':'#596270', /* 5.4:1 on --surface, so 10.5px part codes pass AA */
     '--accent':'#2f78c9', '--accent-dim':'#7fb0e0',
     '--roadbed':'#c3c9d1', '--roadbed-dark':'#a7adb7',
     '--open-port':'#189a5c', '--danger':'#c8372f',
@@ -11471,11 +11672,13 @@ const THEMES = {
   colourblind: null,
 };
 const THEME_KEY = 'katoUnitrackPlanner.theme.v1';
-function applyTheme(key){
+// `persist` false for the first visit's default, so it keeps following the
+// system until the user picks a theme.
+function applyTheme(key, persist=true){
   currentTheme = Object.hasOwn(THEMES, key) ? key : 'default';
   const vars = THEMES[currentTheme], root = document.documentElement.style;
   Object.keys(THEMES.light).forEach(prop=>{ if(vars) root.setProperty(prop, vars[prop]); else root.removeProperty(prop); });
-  try{ localStorage.setItem(THEME_KEY, key); }catch(err){ /* private browsing etc.: won't persist */ }
+  if(persist) try{ localStorage.setItem(THEME_KEY, key); }catch(err){ /* private browsing etc.: won't persist */ }
 }
 const fillThemeSelect = ()=>document.querySelectorAll('#themeSelect option').forEach(opt=>{ opt.textContent = tr('theme.'+opt.value); });
 (function initThemeSelect(){
@@ -11488,9 +11691,12 @@ const fillThemeSelect = ()=>document.querySelectorAll('#themeSelect option').for
   fillThemeSelect();
   let saved = null;
   try{ saved = localStorage.getItem(THEME_KEY); }catch(err){}
-  const startKey = Object.hasOwn(THEMES, saved) ? saved : 'default';
+  // A stored choice wins; with none, a system set to light starts in Light.
+  const hasSaved = Object.hasOwn(THEMES, saved);
+  const startKey = hasSaved ? saved
+    : (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'default');
   sel.value = startKey;
-  applyTheme(startKey);
+  applyTheme(startKey, hasSaved);
   sel.addEventListener('change', ()=>{
     applyTheme(sel.value);
     // Validity colours are baked into SVG attributes, so a live switch needs an
@@ -11534,6 +11740,10 @@ function applyLanguage(lang){
   });
   sel.value = STRINGS[currentLang] ? currentLang : 'en';
   sel.addEventListener('change', ()=>applyLanguage(sel.value));
+  // One language is no choice: its Settings row hides until there's a second.
+  const single = Object.keys(LANGUAGES).length<2;
+  sel.hidden = single;
+  document.querySelector('label[for="langSelect"]').hidden = single;
 })();
 
 /* ============================================================
@@ -11544,16 +11754,13 @@ function applyLanguage(lang){
 let settingsOpen = false;
 function openSettings(){
   settingsOpen = true;
-  document.getElementById('settingsOverlay').style.display = 'flex';
+  showDialog('settingsOverlay', document.getElementById('themeSelect'));
   document.getElementById('settingsBtn').setAttribute('aria-expanded','true');
-  document.getElementById('themeSelect').focus();
 }
 function closeSettings(){
   settingsOpen = false;
-  document.getElementById('settingsOverlay').style.display = 'none';
-  const btn = document.getElementById('settingsBtn');
-  btn.setAttribute('aria-expanded','false');
-  btn.focus();
+  hideDialog('settingsOverlay'); // focus back to where it was: the ⚙ button, when it opened Settings
+  document.getElementById('settingsBtn').setAttribute('aria-expanded','false');
 }
 // The dialog's keys (a dialog layer of onKeyDown); the selects keep their own.
 function settingsKeys(e){
@@ -11656,6 +11863,7 @@ function setUserColour(name, hex){
   document.getElementById('forgetBtn').addEventListener('click', async ()=>{
     if(!await askConfirm(tr('settings.forget.confirm'), tr('settings.forget'))) return;
     autosaveOn = false;
+    layoutDirty = false; // they've just agreed to lose it: no second question from beforeunload
     clearTimeout(autosaveTimer);
     try{
       Object.keys(localStorage).filter(k=>k.startsWith('katoUnitrackPlanner.') || k===LANG_KEY)
@@ -11698,6 +11906,45 @@ function recentreView(){
   invalidate();
 }
 document.getElementById('zoomReset').addEventListener('click', recentreView);
+// Brings a piece into view if any of it is off screen, keeping the zoom: its
+// centre goes to the middle of the canvas ([ and ], editKeys).
+function revealPiece(id){
+  const p = pieces[id];
+  if(!p) return;
+  const wrap = document.getElementById('canvasWrap'), w = wrap.clientWidth, h = wrap.clientHeight;
+  const pts = localPieceHull(p.typeId).map(q=>worldPoint(p, q)).map(q=>({x:view.x + q.x*view.scale, y:view.y + q.y*view.scale}));
+  if(pts.every(q=>q.x>=0 && q.x<=w && q.y>=0 && q.y<=h)) return;
+  const c = worldPoint(p, pieceCenterLocal(TT[p.typeId]));
+  view.x = w/2 - c.x*view.scale;
+  view.y = h/2 - c.y*view.scale;
+  clampView();
+  invalidate();
+}
+
+/* ============================================================
+   DRAWERS
+   Below 1100px wide (the CSS media query) the palette and the side panel
+   slide over the canvas, one at a time, from the Parts and Panel buttons.
+   Above it the buttons are hidden and the classes change nothing.
+   ============================================================ */
+const DRAWERS = {palette:{cls:'palette-open', btn:'paletteToggle'}, info:{cls:'info-open', btn:'infoToggle'}};
+function setDrawer(which, open){
+  const app = document.getElementById('app');
+  Object.entries(DRAWERS).forEach(([k, d])=>{
+    const on = k===which ? open : false; // opening one closes the other: on a phone they'd overlap
+    app.classList.toggle(d.cls, on);
+    document.getElementById(d.btn).setAttribute('aria-expanded', String(on));
+  });
+}
+Object.entries(DRAWERS).forEach(([k, d])=>document.getElementById(d.btn).addEventListener('click', ()=>{
+  setDrawer(k, !document.getElementById('app').classList.contains(d.cls));
+}));
+// A piece dragged out of the palette drawer onto the canvas: the drawers get
+// out of the way, so the drop can be seen. No-op when they're side panels.
+function closeDrawersForDrop(){
+  const app = document.getElementById('app');
+  if(app.classList.contains('palette-open') || app.classList.contains('info-open')) setDrawer(null, false);
+}
 
 /* ============================================================
    WASD PAN
@@ -11729,17 +11976,18 @@ const PAN_SPEED = 9; // screen px per animation frame
 // tabletops), so a piece can be carried further than the view. Whatever is
 // held stays under the still cursor: drags measured from a start point on
 // screen have it moved with the view, then every drag re-runs its own
-// mousemove at the cursor (panDragFollow). The last real mousemove supplies
-// the cursor and its modifier keys.
+// pointermove at the cursor (panDragFollow). The last real pointermove
+// supplies the cursor and its modifier keys.
 let lastRealMouseMove = null;
-window.addEventListener('mousemove', e=>{ if(e.isTrusted) lastRealMouseMove = e; }, true);
+window.addEventListener('pointermove', e=>{ if(e.isTrusted) lastRealMouseMove = e; }, true);
 const PAN_DRAG_MODES = new Set(['pieceDrag', 'paletteDrag', 'joinerDrag', 'setDrag', 'marquee', 'boxDrag', 'boxResize']);
 function panDragFollow(dx, dy){
   [dragState, boxDragState, boxResizeState].forEach(st=>{ if(st){ st.startX += dx; st.startY += dy; } });
   const e = lastRealMouseMove;
   if(!e) return;
-  window.dispatchEvent(new MouseEvent('mousemove', {clientX:e.clientX, clientY:e.clientY, buttons:e.buttons,
-    shiftKey:e.shiftKey, ctrlKey:e.ctrlKey, altKey:e.altKey, metaKey:e.metaKey}));
+  window.dispatchEvent(new PointerEvent('pointermove', {clientX:e.clientX, clientY:e.clientY, buttons:e.buttons,
+    shiftKey:e.shiftKey, ctrlKey:e.ctrlKey, altKey:e.altKey, metaKey:e.metaKey,
+    pointerId:e.pointerId, pointerType:e.pointerType, isPrimary:e.isPrimary}));
 }
 function panLoopStep(){
   requestAnimationFrame(panLoopStep);
@@ -11870,11 +12118,12 @@ function clipboardKeys(e){
 
 /* ============================================================
    BARE-KEY BINDINGS: F (flip), G (Gradient Mode), J (Fill Gap), Q/E
-   (rotate), Enter (edit a text label), Delete or Backspace, Esc; and the
-   view keys (viewKeys), which work in every mode.
+   (rotate), Enter (edit a text label), Delete or Backspace, Esc, the arrow
+   keys (nudge), [ and ] (step through the pieces); and the view keys
+   (viewKeys), which work in every mode.
    Keys taken elsewhere: W/A/S/D (pan), , and . (flood-select beyond the
    selection's left/up or right/down end), the digits (palette search),
-   Ctrl/Cmd+A/C/X/V/Z/Y. The arrow keys are free. Backspace is Delete (Mac keyboards have
+   Ctrl/Cmd+A/C/X/V/Z/Y. Backspace is Delete (Mac keyboards have
    no Delete key); its default is prevented, though no current browser
    navigates back with it. Inside Gradient Mode, G, Enter and Delete are
    gradientKeys' instead (see onKeyDown).
@@ -11931,6 +12180,48 @@ function rotateSelection(step){
   });
   findLoopClosures(group).forEach(connectPorts);
   scheduleAutosave();
+  invalidate();
+  return true;
+}
+// Arrow keys: move the selection 1 mm (Shift: 10 mm) a press, each press one
+// undo step, as a drag's drop is. Joins to pieces outside the selection break,
+// as a drag breaks them; an end that then meets another exactly joins it, as
+// after rotateSelection. No snapping. A selected unlocked tabletop or label
+// moves the same way. True if it moved something.
+const NUDGE_DIR = {ArrowLeft:[-1,0], ArrowRight:[1,0], ArrowUp:[0,-1], ArrowDown:[0,1]};
+function nudgeSelection(dx, dy){
+  const box = tableBoxes[selectedBoxId];
+  if(box && !box.locked){
+    pushHistory();
+    box.x += dx; box.y += dy;
+    scheduleAutosave();
+    invalidate();
+    return true;
+  }
+  const ids = [...selectedPieces].filter(id=>pieces[id]);
+  if(!ids.length) return false;
+  const group = new Set(ids);
+  pushHistory();
+  ids.forEach(id=>getPorts(pieceType(id)).forEach((_, i)=>{
+    const nb = getConnectedNeighbor(id, i);
+    if(nb && !group.has(nb.pieceId)) disconnectPort(id, i);
+  }));
+  ids.forEach(id=>{ pieces[id].ox += dx; pieces[id].oy += dy; });
+  findLoopClosures(group).forEach(connectPorts);
+  scheduleAutosave();
+  invalidate();
+  return true;
+}
+// [ and ]: select the previous / next piece on its own, in the order pieces
+// were made (their id numbers), wrapping round; from no single selection, the
+// last / first. The view follows a piece that's off screen.
+function stepPieceSelection(step){
+  const ids = Object.keys(pieces).sort((a, b)=>(parseInt(a.slice(1), 10) || 0) - (parseInt(b.slice(1), 10) || 0) || a.localeCompare(b));
+  if(!ids.length) return false;
+  const cur = selectedPieces.size===1 ? ids.indexOf([...selectedPieces][0]) : -1;
+  const next = cur<0 ? (step>0 ? 0 : ids.length-1) : (cur + step + ids.length) % ids.length;
+  setSelection({ids:[ids[next]]});
+  revealPiece(ids[next]);
   invalidate();
   return true;
 }
@@ -12019,6 +12310,15 @@ function editKeys(e){
     return;
   }
   if(interactionMode!=='idle') return; // no Delete (or starting Gradient Mode) mid-mode
+  if(NUDGE_DIR[e.key] && document.activeElement?.tagName!=='SELECT'){ // a focused menu keeps its arrows
+    const [x, y] = NUDGE_DIR[e.key], d = e.shiftKey ? 10 : 1;
+    if(nudgeSelection(x*d, y*d)) e.preventDefault(); // else the key keeps its default (a focused select, say)
+    return;
+  }
+  if(e.key==='[' || e.key===']'){
+    if(stepPieceSelection(e.key===']' ? 1 : -1)) e.preventDefault();
+    return;
+  }
   // Esc deselects; with nothing selected, it clears the palette search.
   if(e.key==='Escape'){
     if(selectedPort || selectedPieces.size || selectedBoxId){
@@ -12444,14 +12744,14 @@ window.addEventListener('wheel', e=>{
   e.preventDefault(); e.stopImmediatePropagation();
   stepGapFill(e.deltaY<0 ? -1 : 1);
 }, {passive:false, capture:true});
-svg.addEventListener('mousedown', e=>{
+svg.addEventListener('pointerdown', e=>{
   if(!gapFill) return;
   e.preventDefault(); e.stopPropagation();
   _gapFillSwallowClick = true;
   if(e.button===0 && onGapFill(screenToWorld(e.clientX, e.clientY))) acceptGapFill();
   else endGapFill();
 }, true);
-// The click that follows a handled mousedown mustn't reach a port or piece
+// The click that follows a handled pointerdown mustn't reach a port or piece
 // under the preview.
 let _gapFillSwallowClick = false;
 svg.addEventListener('click', e=>{
@@ -12773,12 +13073,12 @@ async function openPngExport(){
   img.src = _pngExport.url;
   try{ await img.decode(); }catch(err){} // shown once ready, so the dialog opens at its full size
   document.getElementById('pngSize').textContent = tr('png.size', W, H);
-  document.getElementById('pngOverlay').style.display = 'flex';
+  showDialog('pngOverlay');
   pngOpen = true;
 }
 function closePngExport(){
   pngOpen = false;
-  document.getElementById('pngOverlay').style.display = 'none';
+  hideDialog('pngOverlay');
   document.getElementById('pngImg').removeAttribute('src');
   if(_pngExport){ URL.revokeObjectURL(_pngExport.url); _pngExport = null; }
 }
@@ -12822,6 +13122,51 @@ function fileKeys(e){
   document.getElementById(k==='s' ? 'saveBtn' : 'loadBtn').click();
   return true;
 }
+// DIALOG FOCUS, for every dialog alike: opening one (showDialog) remembers
+// what had focus and focuses the dialog's first control (its search box, else
+// its close button) unless the caller names one; Tab and Shift+Tab wrap
+// inside the topmost dialog (trapDialogTab, ahead of its own keys in
+// onKeyDown); closing (hideDialog) gives focus back.
+const _dialogReturn = new Map(); // overlay id -> the element focused before it opened
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="file"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+function showDialog(id, focusEl){
+  const ov = document.getElementById(id);
+  if(ov.style.display!=='flex') _dialogReturn.set(id, document.activeElement);
+  ov.style.display = 'flex';
+  const target = focusEl || ov.querySelector('input[type="text"]') || ov.querySelector('.modal-close') || ov.querySelector(FOCUSABLE);
+  if(target) target.focus();
+}
+function hideDialog(id){
+  const ov = document.getElementById(id);
+  // Only when focus was in the dialog (hiding it drops focus to <body>): a
+  // closer that moved focus on purpose, as Help opening Gestures does, keeps it.
+  const wasInside = ov.contains(document.activeElement) || document.activeElement===document.body;
+  ov.style.display = 'none';
+  const back = _dialogReturn.get(id);
+  _dialogReturn.delete(id);
+  if(wasInside && back && back!==document.body && back.isConnected) back.focus();
+}
+// The overlay whose keys openDialogKeys hands out, in the same order.
+function topDialogId(){
+  return confirmOpen ? 'confirmOverlay' : invOpen ? 'invOverlay'
+    : partsOpen ? (packsOpen ? 'packsOverlay' : 'partsOverlay') : pngOpen ? 'pngOverlay'
+    : settingsOpen ? 'settingsOverlay' : helpOpen ? 'helpOverlay' : gestOpen ? 'gestOverlay' : null;
+}
+// True if it took the key. Wraps only at the ends (or pulls focus back in
+// from outside); within the dialog the browser's own Tab order stands.
+function trapDialogTab(e){
+  if(e.key!=='Tab' || e.ctrlKey || e.metaKey || e.altKey) return false;
+  const modal = document.querySelector(`#${topDialogId()} .modal`);
+  if(!modal) return false;
+  const items = [...modal.querySelectorAll(FOCUSABLE)].filter(n=>n.getClientRects().length && !n.closest('[hidden]'));
+  if(!items.length){ e.preventDefault(); return true; }
+  const first = items[0], last = items[items.length-1], at = document.activeElement;
+  if(!modal.contains(at) || (e.shiftKey ? at===first : at===last)){
+    e.preventDefault();
+    (e.shiftKey ? last : first).focus();
+  }
+  return true;
+}
 // The topmost open dialog's key handler, or null when none is open.
 function openDialogKeys(){
   return confirmOpen ? confirmKeys
@@ -12836,7 +13181,7 @@ function openDialogKeys(){
 function onKeyDown(e){
   if(fileKeys(e)) return;
   const dialogKeys = openDialogKeys();
-  if(dialogKeys){ e.stopPropagation(); dialogKeys(e); return; }
+  if(dialogKeys){ e.stopPropagation(); if(!trapDialogTab(e)) dialogKeys(e); return; }
   if(isTypingTarget(document.activeElement)) return; // typing never reaches a shortcut
   // Panning works in Gradient Mode too (panLoopStep allows it); every other
   // key is the mode's.
@@ -12917,15 +13262,14 @@ function askConfirm(message, confirmLabel){
   document.getElementById('confirmText').textContent = message;
   const okBtn = document.getElementById('confirmOkBtn');
   okBtn.textContent = confirmLabel || tr('dialog.ok.default');
-  document.getElementById('confirmOverlay').style.display = 'flex';
+  showDialog('confirmOverlay', okBtn);
   confirmOpen = true;
-  okBtn.focus();
   return new Promise(resolve=>{ confirmResolver = resolve; });
 }
 function closeConfirm(result){
   if(!confirmOpen) return;
   confirmOpen = false;
-  document.getElementById('confirmOverlay').style.display = 'none';
+  hideDialog('confirmOverlay');
   const resolve = confirmResolver;
   confirmResolver = null;
   if(resolve) resolve(result);
@@ -12957,8 +13301,10 @@ document.getElementById('newBtn').addEventListener('click', async ()=>{
 });
 document.getElementById('saveBtn').addEventListener('click', async ()=>{
   try{
-    if(await offerDownload(new Blob([serializeLayout()], {type:'application/json'}), `kato-layout-${fileStamp()}.json`))
+    if(await offerDownload(new Blob([serializeLayout()], {type:'application/json'}), `kato-layout-${fileStamp()}.json`)){
+      layoutDirty = false;
       flashSaveLoadMsg(tr('msg.saved', Object.keys(pieces).length));
+    }
   }catch(err){ flashSaveFailed(err); }
 });
 document.getElementById('loadBtn').addEventListener('click', ()=>{
@@ -13042,6 +13388,8 @@ function applyLayoutData(data){
   clearTransientState();
   undoStack = [];
   redoStack = [];
+  undoBytes = 0;
+  layoutDirty = false; // New, Load and the autosave restore all start clean
   updateHistoryButtons();
   return {pieceCount: Object.keys(loadedPieces).length, skipped};
 }
@@ -13102,6 +13450,16 @@ document.getElementById('loadInput').addEventListener('change', (e)=>{
   };
   reader.onerror = ()=>flashSaveLoadMsg(tr('msg.loadFailed.readError'), true);
   reader.readAsText(file);
+});
+
+// Leaving with unsaved changes asks first, but only when nothing else keeps
+// them: with autosave on and working, the browser's copy is restored next
+// time, so a pending (debounced) write is made now instead.
+window.addEventListener('beforeunload', e=>{
+  if(!layoutDirty) return;
+  if(autosaveOn && autosaveAvailable){ clearTimeout(autosaveTimer); doAutosave(); return; }
+  e.preventDefault();
+  e.returnValue = ''; // older browsers show the prompt only with this set
 });
 
 function fitViewBox(){
